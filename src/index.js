@@ -1,10 +1,12 @@
 import {ApolloServer, ApolloError} from 'apollo-server'
 import gql from 'graphql-tag'
+import fetch from 'node-fetch'
+import {makeExecutableSchema, mergeSchemas} from 'graphql-tools'
+import {createGithubRemoteSchema} from './github'
 
 const typeDefs = gql`
-  type Item {
+  type Spaceship {
     name: String
-    done: Boolean
   }
 
   input NewItemInput {
@@ -12,37 +14,36 @@ const typeDefs = gql`
   }
 
   type Query {
-    getItem: Item
-  }
-
-  type Mutation {
-    createItem(input: NewItemInput): Item!
+    spaceships(first: Int, skip: Int): [Spaceship]
   }
 `
 
-const isItemValid = () => false
 
 const resolvers = {
     Query: {
-        getItem: () => {
+        spaceships: async (_, args, context, info) => {
+            const {first = 10, skip = 0} = args;
+            const items = await fetch('https://swapi.co/api/starships').then(res => res.json())
+            return items.results.slice(skip, first)
         }
     },
-    Mutation: {
-        createItem: (_, args, context, info) => {
-            const {name} = args.input
-            return isItemValid()
-                ? {
-                    name,
-                    done: true
-                }
-                : new ApolloError('Legit', 401)
-        }
-    }
 }
 
-const server = new ApolloServer({typeDefs, resolvers})
 
-server
-    .listen()
-    .then(leke => console.log(leke.url))
-    .catch(err => console.error(err))
+const mountSchema = async (typeDefs, resolvers) => {
+    const personalSchema = makeExecutableSchema({typeDefs, resolvers})
+    const githubSchema = await createGithubRemoteSchema()
+
+
+    const server = new ApolloServer({
+        schema: mergeSchemas({schemas: [personalSchema, githubSchema]})
+    })
+
+
+    server
+        .listen()
+        .then(leke => console.log(leke.url))
+        .catch(err => console.error(err))
+}
+
+mountSchema(typeDefs, resolvers)
